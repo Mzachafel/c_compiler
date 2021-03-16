@@ -14,20 +14,19 @@ extern FILE *outfile;
 	struct function *func;
 	struct body *bdy;
 	struct statement *stmt;
-	char *id;
+	struct expression *expr;
+	char *identifier;
 	int token;
 }
 
-%token <id> ID
-%token <token> LBRACE RBRACE
-%token <token> LPAREN RPAREN
-%token <token> SEMICOL INT RET
-%token <token> INTLIT UNDEFINED
+%token <identifier> IDENTIFIER
+%token <token> TYPE RETURN NUMBER ERROR
 
 %type <func> function
 %type <bdy> body
 %type <stmt> statement
-%type <token> expr
+%type <expr> expression
+%type <token> unop
 
 %%
 
@@ -39,18 +38,24 @@ program: /* nothing */
 }
 ;
 
-function: INT ID LPAREN RPAREN LBRACE body RBRACE {
-	$$ = creatfunc($6, INT, $2); }
+function: TYPE IDENTIFIER '(' ')' '{' body '}' {
+	$$ = creatfunc($6, TYPE, $2); }
 ;
 
 body: statement { $$ = creatbdy($1); }
     | body statement { $$ = addstmt($1, $2); }
 ;
 
-statement: RET expr SEMICOL { $$ = creatstmt(RET, $2); }
+statement: RETURN expression ';' { $$ = creatstmt($2, 0); }
 ;
 
-expr: INTLIT
+expression: NUMBER { $$ = createxpr(creatop(0, $1)); }
+    | unop expression { $$ = addop($2, creatop($1, 0)); }
+;
+
+unop: '-' { $$ = '-'; }
+    | '!' { $$ = '!'; }
+    | '~' { $$ = '~'; }
 ;
 
 %%

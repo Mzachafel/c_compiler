@@ -1,9 +1,22 @@
 #ifndef MY_AST_H
 #define MY_AST_H
 
+struct operation;
+
+struct operation *creatop(int, int);
+void writeop(struct operation *, FILE *);
+void clearop(struct operation *);
+
+struct expression;
+
+struct expression *createxpr(struct operation *);
+struct expression *addop(struct expression *, struct operation *);
+void writeexpr(struct expression *, FILE *);
+void clearexpr(struct expression *);
+
 struct statement;
 
-struct statement *creatstmt(int, int);
+struct statement *creatstmt(struct expression *, int);
 void writestmt(struct statement *, FILE *);
 void clearstmt(struct statement *);
 
