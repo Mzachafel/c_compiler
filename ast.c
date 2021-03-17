@@ -1,81 +1,177 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-struct operation {
-	int act;
-	int val;
+union trmval {
+	struct expression *expr;
+	struct term *trm;
+	int num;
 };
 
-struct operation *creatop(int act, int val)
-{
-	struct operation *op = (struct operation *)
-		           malloc(sizeof(struct operation));
-	op->act = act;
-	op->val = val;
+struct term {
+	union trmval val;
+	int act;
+};
 
-	return op;
-}
-
-void writeop(struct operation *op, FILE *outfile)
+struct expression;
+struct term *creattrm(union trmval val, int act)
 {
-	switch (op->act) {
-	case 0:
-		fprintf(outfile, "\tmov     $%d,%%eax\n", op->val);
+	struct term *trm = (struct term *) malloc(sizeof(struct term));
+	trm->act = act;
+	switch (act) {
+	case 1:
+		trm->val.expr = val.expr;
 		break;
 	case '-':
-		fprintf(outfile, "\tneg     %%eax\n");
-		break;
 	case '!':
-		fprintf(outfile, "\tcmp     $0,%%eax\n");
-		fprintf(outfile, "\tmov     $0,%%eax\n");
-		fprintf(outfile, "\tsete    %%eax\n");
-		break;
 	case '~':
-		fprintf(outfile, "\tnot     %%eax\n");
+		trm->val.trm = val.trm;
 		break;
+	default:
+		trm->val.num = val.num;
+	}
+
+	return trm;
+}
+
+void writeexpr(struct expression *, FILE *);
+void writetrm(struct term *trm, FILE *outfile)
+{
+	switch (trm->act) {
+	case 1:
+		writeexpr(trm->val.expr, outfile);
+		break;
+	case '-': /* negotiation:
+                     x -> -x */
+		writetrm(trm->val.trm, outfile);
+		fprintf(outfile, "\tneg     %%rax\n");
+		break;
+	case '!': /* logical negotiation:
+	             0 -> 1, anything else -> 0 */
+		writetrm(trm->val.trm, outfile);
+		fprintf(outfile, "\tcmp     $0,%%rax\n");
+		fprintf(outfile, "\tmov     $0,%%rax\n");
+		fprintf(outfile, "\tsete    %%rax\n");
+		break;
+	case '~': /* bitwise complement:
+	             0110 -> 1001 */
+		writetrm(trm->val.trm, outfile);
+		fprintf(outfile, "\tnot     %%rax\n");
+		break;
+	default: /* new value */
+		fprintf(outfile, "\tmov     $%d,%%rax\n", trm->val.num);
 	}
 }
 
-void clearop(struct operation *op)
+void clearexpr(struct expression *);
+void cleartrm(struct term *trm)
 {
-	free(op);
+	switch (trm->act) {
+	case 1:
+		clearexpr(trm->val.expr);
+		break;
+	case '-':
+	case '!':
+	case '~':
+		cleartrm(trm->val.trm);
+		break;
+	}
+	free(trm);
+}
+
+
+
+struct factor {
+	struct factor *lfctr;
+	struct term *rtrm;
+	int act;
+};
+
+struct factor *creatfctr(struct factor *lfctr, int act, struct term *rtrm)
+{
+	struct factor *fctr = (struct factor *) malloc(sizeof(struct factor));
+	fctr->lfctr = lfctr;
+	fctr->act = act;
+	fctr->rtrm = rtrm;
+
+	return fctr;
+}
+
+void writefctr(struct factor *fctr, FILE *outfile)
+{
+	switch(fctr->act) {
+	case '*':
+		writefctr(fctr->lfctr, outfile);
+		fprintf(outfile, "\tpush    %%rax\n");
+		writetrm(fctr->rtrm, outfile);
+		fprintf(outfile, "\tpop     %%rcx\n");
+		fprintf(outfile, "\tmul     %%rcx\n");
+		break;
+	case '/':
+		writefctr(fctr->lfctr, outfile);
+		fprintf(outfile, "\tpush    %%rax\n");
+		writetrm(fctr->rtrm, outfile);
+		fprintf(outfile, "\tpop     %%rcx\n");
+		fprintf(outfile, "\tdiv     %%rcx\n");
+		break;
+	default:
+		writetrm(fctr->rtrm, outfile);
+	}
+}
+
+void clearfctr(struct factor *fctr)
+{
+	cleartrm(fctr->rtrm);
+	if (fctr->act)
+		clearfctr(fctr->lfctr);
+	free(fctr);
 }
 
 
 
 struct expression {
-	struct operation *ops[10];
-	int currop;
+	struct expression *lexpr;
+	struct factor *rfctr;
+	int act;
 };
 
-struct expression *createxpr(struct operation *op)
+struct expression *createxpr(struct expression *lexpr, int act, struct factor *rfctr)
 {
-	struct expression *expr = (struct expression *) 
-		            malloc(sizeof(struct expression));
-	expr->currop = 0;
-	expr->ops[expr->currop++] = op;
-
-	return expr;
-}
-
-struct expression *addop(struct expression *expr, struct operation *op)
-{
-	if (expr->currop < 10)
-		expr->ops[expr->currop++] = op;
+	struct expression *expr = (struct expression *) malloc(sizeof(struct expression));
+	expr->lexpr = lexpr;
+	expr->act = act;
+	expr->rfctr = rfctr;
 
 	return expr;
 }
 
 void writeexpr(struct expression *expr, FILE *outfile)
 {
-	for (int i=0; i<expr->currop; i++)
-		writeop(expr->ops[i], outfile);
+	switch(expr->act) {
+	case '+':
+		writeexpr(expr->lexpr, outfile);
+		fprintf(outfile, "\tpush    %%rax\n");
+		writefctr(expr->rfctr, outfile);
+		fprintf(outfile, "\tpop     %%rcx\n");
+		fprintf(outfile, "\tadd     %%rax,%%rcx\n");
+		break;
+	case '-':
+		writeexpr(expr->lexpr, outfile);
+		fprintf(outfile, "\tpush    %%rax\n");
+		writefctr(expr->rfctr, outfile);
+		fprintf(outfile, "\tpop     %%rcx\n");
+		fprintf(outfile, "\tsub     %%rax,%%rcx\n");
+		break;
+	default:
+		writefctr(expr->rfctr, outfile);
+	}
 }
 
 void clearexpr(struct expression *expr)
 {
-	for (int i=0; i<expr->currop; i++)
-		clearop(expr->ops[i]);
+	clearfctr(expr->rfctr);
+	if (expr->act)
+		clearexpr(expr->lexpr);
 	free(expr);
 }
 
@@ -88,8 +184,7 @@ struct statement {
 
 struct statement *creatstmt(struct expression* expr, int act)
 {
-	struct statement *stmt = (struct statement *) 
-		           malloc(sizeof(struct statement));
+	struct statement *stmt = (struct statement *) malloc(sizeof(struct statement));
 	stmt->expr = expr;
 	stmt->act = act;
 
@@ -116,36 +211,35 @@ void clearstmt(struct statement *stmt)
 
 struct body {
 	struct statement *stmts[10];
-	int currstmt;
+	int curstmt;
 };
 
 struct body *creatbdy(struct statement *stmt)
 {
-	struct body *bdy = (struct body *)
-		               malloc(sizeof(struct body));
-	bdy->currstmt = 0;
-	bdy->stmts[bdy->currstmt++] = stmt;
+	struct body *bdy = (struct body *) malloc(sizeof(struct body));
+	bdy->curstmt = 0;
+	bdy->stmts[bdy->curstmt++] = stmt;
 
 	return bdy;
 }
 
 struct body *addstmt(struct body *bdy, struct statement *stmt)
 {
-	if (bdy->currstmt < 10)
-		bdy->stmts[bdy->currstmt++] = stmt;
+	if (bdy->curstmt < 10)
+		bdy->stmts[bdy->curstmt++] = stmt;
 
 	return bdy;
 }
 
 void writebdy(struct body *bdy, FILE *outfile)
 {
-	for (int i=0; i<bdy->currstmt; i++)
+	for (int i=0; i<bdy->curstmt; i++)
 		writestmt(bdy->stmts[i], outfile);
 }
 
 void clearbdy(struct body *bdy)
 {
-	for (int i=0; i<bdy->currstmt; i++)
+	for (int i=0; i<bdy->curstmt; i++)
 		clearstmt(bdy->stmts[i]);
 	free(bdy);
 }
@@ -154,16 +248,16 @@ void clearbdy(struct body *bdy)
 
 struct function {
 	struct body *bdy;
-	int ret;
+	char *type;
 	char *id;
 };
 
-struct function *creatfunc(struct body *bdy, int ret, char* id)
+struct function *creatfunc(char *type, char *id, struct body *bdy)
 {
 	struct function *func = (struct function *) malloc(sizeof(struct function));
+	func->type = strdup(type);
+	func->id = strdup(id);
 	func->bdy = bdy;
-	func->ret = ret;
-	func->id = id;
 
 	return func;
 }
