@@ -1,23 +1,11 @@
 #ifndef MY_AST_H
 #define MY_AST_H
 
-union trmval;
-
-struct term;
-
-struct term *creattrm(union trmval, int);
-void writetrm(struct term *, FILE *);
-void cleartrm(struct term *);
-
-struct factor;
-
-struct factor *creatfctr(struct factor *, int, struct term *);
-void writefctr(struct factor *, FILE *);
-void clearfctr(struct factor *);
+union lval;
 
 struct expression;
 
-struct expression *createxpr(struct expression *, int, struct factor *);
+struct expression *createxpr(union lval, int, struct expression *);
 void writeexpr(struct expression *, FILE *);
 void clearexpr(struct expression *);
 

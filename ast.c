@@ -1,177 +1,224 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "parser.tab.h"
 
-union trmval {
+char *newlabel(void)
+{
+	static int counter = 1;
+	if (counter > 230)
+		counter = 1;
+	int tmp = counter, i = 0;
+	char *label = (char *) malloc(10*sizeof(char));
+	for (i=0; tmp; i++, tmp/=26)
+		label[i] = tmp%26 + 'a' - 1;
+	label[i] = '\0';
+	counter++;
+
+	return label;
+}
+
+
+union lval {
 	struct expression *expr;
-	struct term *trm;
 	int num;
 };
 
-struct term {
-	union trmval val;
-	int act;
-};
-
-struct expression;
-struct term *creattrm(union trmval val, int act)
-{
-	struct term *trm = (struct term *) malloc(sizeof(struct term));
-	trm->act = act;
-	switch (act) {
-	case 1:
-		trm->val.expr = val.expr;
-		break;
-	case '-':
-	case '!':
-	case '~':
-		trm->val.trm = val.trm;
-		break;
-	default:
-		trm->val.num = val.num;
-	}
-
-	return trm;
-}
-
-void writeexpr(struct expression *, FILE *);
-void writetrm(struct term *trm, FILE *outfile)
-{
-	switch (trm->act) {
-	case 1:
-		writeexpr(trm->val.expr, outfile);
-		break;
-	case '-': /* negotiation:
-                     x -> -x */
-		writetrm(trm->val.trm, outfile);
-		fprintf(outfile, "\tneg     %%rax\n");
-		break;
-	case '!': /* logical negotiation:
-	             0 -> 1, anything else -> 0 */
-		writetrm(trm->val.trm, outfile);
-		fprintf(outfile, "\tcmp     $0,%%rax\n");
-		fprintf(outfile, "\tmov     $0,%%rax\n");
-		fprintf(outfile, "\tsete    %%rax\n");
-		break;
-	case '~': /* bitwise complement:
-	             0110 -> 1001 */
-		writetrm(trm->val.trm, outfile);
-		fprintf(outfile, "\tnot     %%rax\n");
-		break;
-	default: /* new value */
-		fprintf(outfile, "\tmov     $%d,%%rax\n", trm->val.num);
-	}
-}
-
-void clearexpr(struct expression *);
-void cleartrm(struct term *trm)
-{
-	switch (trm->act) {
-	case 1:
-		clearexpr(trm->val.expr);
-		break;
-	case '-':
-	case '!':
-	case '~':
-		cleartrm(trm->val.trm);
-		break;
-	}
-	free(trm);
-}
-
-
-
-struct factor {
-	struct factor *lfctr;
-	struct term *rtrm;
-	int act;
-};
-
-struct factor *creatfctr(struct factor *lfctr, int act, struct term *rtrm)
-{
-	struct factor *fctr = (struct factor *) malloc(sizeof(struct factor));
-	fctr->lfctr = lfctr;
-	fctr->act = act;
-	fctr->rtrm = rtrm;
-
-	return fctr;
-}
-
-void writefctr(struct factor *fctr, FILE *outfile)
-{
-	switch(fctr->act) {
-	case '*':
-		writefctr(fctr->lfctr, outfile);
-		fprintf(outfile, "\tpush    %%rax\n");
-		writetrm(fctr->rtrm, outfile);
-		fprintf(outfile, "\tpop     %%rcx\n");
-		fprintf(outfile, "\tmul     %%rcx\n");
-		break;
-	case '/':
-		writefctr(fctr->lfctr, outfile);
-		fprintf(outfile, "\tpush    %%rax\n");
-		writetrm(fctr->rtrm, outfile);
-		fprintf(outfile, "\tpop     %%rcx\n");
-		fprintf(outfile, "\tdiv     %%rcx\n");
-		break;
-	default:
-		writetrm(fctr->rtrm, outfile);
-	}
-}
-
-void clearfctr(struct factor *fctr)
-{
-	cleartrm(fctr->rtrm);
-	if (fctr->act)
-		clearfctr(fctr->lfctr);
-	free(fctr);
-}
-
-
-
 struct expression {
-	struct expression *lexpr;
-	struct factor *rfctr;
+	union lval lexpr;
 	int act;
+	struct expression *rexpr;
 };
 
-struct expression *createxpr(struct expression *lexpr, int act, struct factor *rfctr)
+struct expression *createxpr(union lval lexpr, int act, struct expression *rexpr)
 {
 	struct expression *expr = (struct expression *) malloc(sizeof(struct expression));
-	expr->lexpr = lexpr;
+	if (!act)
+		expr->lexpr.num = lexpr.num;
+	else
+		expr->lexpr.expr = lexpr.expr;
 	expr->act = act;
-	expr->rfctr = rfctr;
+	expr->rexpr = rexpr;
 
 	return expr;
 }
 
 void writeexpr(struct expression *expr, FILE *outfile)
 {
-	switch(expr->act) {
-	case '+':
-		writeexpr(expr->lexpr, outfile);
-		fprintf(outfile, "\tpush    %%rax\n");
-		writefctr(expr->rfctr, outfile);
-		fprintf(outfile, "\tpop     %%rcx\n");
-		fprintf(outfile, "\tadd     %%rax,%%rcx\n");
-		break;
-	case '-':
-		writeexpr(expr->lexpr, outfile);
-		fprintf(outfile, "\tpush    %%rax\n");
-		writefctr(expr->rfctr, outfile);
-		fprintf(outfile, "\tpop     %%rcx\n");
-		fprintf(outfile, "\tsub     %%rax,%%rcx\n");
-		break;
-	default:
-		writefctr(expr->rfctr, outfile);
+	if (expr->act == NUMBER)
+		fprintf(outfile, "\tmov     $%d,%%rax\n", expr->lexpr.num);
+	else if (expr->rexpr == NULL) { /* unary operator */
+		writeexpr(expr->lexpr.expr, outfile);
+		switch (expr->act) {
+		case '-': /* negotiation:
+                	     x -> -x */
+			fprintf(outfile, "\tneg     %%rax\n");
+			break;
+		case '!': /* logical negotiation:
+	        	     0 -> 1, anything else -> 0 */
+			fprintf(outfile, "\tcmp     $0,%%rax\n");
+			fprintf(outfile, "\tsete    %%al\n");
+			break;
+		case '~': /* bitwise complement:
+		             0110 -> 1001 */
+			fprintf(outfile, "\tnot     %%rax\n");
+			break;
+		}
+	}
+	else { /* binary operator */
+		writeexpr(expr->lexpr.expr, outfile);
+		char *label1, *label2;
+		switch(expr->act) {
+		case OR:
+			fprintf(outfile, "\tcmp     $0,%%rax\n");
+			label1 = newlabel();
+			fprintf(outfile, "\tje      %s\n", label1);
+			fprintf(outfile, "\tmov     $1,%%rax\n");
+			label2 = newlabel();
+			fprintf(outfile, "\tjmp     %s\n", label2);
+			fprintf(outfile, "%s:\n", label1);
+			free(label1);
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tcmp     $0,%%rax\n");
+			fprintf(outfile, "\tsetne   %%al\n");
+			fprintf(outfile, "%s:\n", label2);
+			free(label2);
+			break;
+		case AND:
+			fprintf(outfile, "\tcmp     $0,%%rax\n");
+			label1 = newlabel();
+			fprintf(outfile, "\tjne     %s\n", label1);
+			fprintf(outfile, "\tmov     $0,%%rax\n");
+			label2 = newlabel();
+			fprintf(outfile, "\tjmp     %s\n", label2);
+			fprintf(outfile, "%s:\n", label1);
+			free(label1);
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tcmp     $0,%%rax\n");
+			fprintf(outfile, "\tsetne   %%al\n");
+			fprintf(outfile, "%s:\n", label2);
+			free(label2);
+			break;
+		case '|':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tor      %%rcx,%%rax\n");
+			break;
+		case '^':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\txor     %%rcx,%%rax\n");
+			break;
+		case '&':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tand     %%rcx,%%rax\n");
+			break;
+		case E:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tcmp     %%rcx,%%rax\n");
+			fprintf(outfile, "\tsete    %%al\n");
+			break;
+		case NE:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tcmp     %%rcx,%%rax\n");
+			fprintf(outfile, "\tsetne    %%al\n");
+			break;
+		case L:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tcmp     %%rcx,%%rax\n");
+			fprintf(outfile, "\tsetg    %%al\n");
+			break;
+		case LE:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tcmp     %%rcx,%%rax\n");
+			fprintf(outfile, "\tsetge   %%al\n");
+			break;
+		case G:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tcmp     %%rcx,%%rax\n");
+			fprintf(outfile, "\tsetl    %%al\n");
+			break;
+		case GE:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tcmp     %%rcx,%%rax\n");
+			fprintf(outfile, "\tsetle   %%al\n");
+			break;
+		case SHL:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tmov     %%al,%%cl\n");
+			fprintf(outfile, "\tpop     %%rax\n");
+			fprintf(outfile, "\tshl     %%cl,%%rax\n");
+			break;
+		case SHR:
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tmov     %%al,%%cl\n");
+			fprintf(outfile, "\tpop     %%rax\n");
+			fprintf(outfile, "\tshr     %%cl,%%rax\n");
+			break;
+		case '+':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tadd     %%rcx,%%rax\n");
+			break;
+		case '-':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tsub     %%rax,%%rcx\n");
+			fprintf(outfile, "\tmov     %%rcx,%%rax\n");
+			break;
+		case '*':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tpop     %%rcx\n");
+			fprintf(outfile, "\tmul     %%rcx\n");
+			break;
+		case '/':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tmov     %%rax,%%rcx\n");
+			fprintf(outfile, "\tpop     %%rax\n");
+			fprintf(outfile, "\tmov     $0,%%rdx\n");
+			fprintf(outfile, "\tdiv     %%rcx\n");
+			break;
+		case '%':
+			fprintf(outfile, "\tpush    %%rax\n");
+			writeexpr(expr->rexpr, outfile);
+			fprintf(outfile, "\tmov     %%rax,%%rcx\n");
+			fprintf(outfile, "\tpop     %%rax\n");
+			fprintf(outfile, "\tmov     $0,%%rdx\n");
+			fprintf(outfile, "\tdiv     %%rcx\n");
+			fprintf(outfile, "\tmov     %%rdx,%%rax\n");
+			break;
+		}
 	}
 }
 
 void clearexpr(struct expression *expr)
 {
-	clearfctr(expr->rfctr);
-	if (expr->act)
-		clearexpr(expr->lexpr);
+	if (expr->act != NUMBER)
+		clearexpr(expr->lexpr.expr);
+	if (expr->rexpr)
+		clearexpr(expr->rexpr);
 	free(expr);
 }
 
