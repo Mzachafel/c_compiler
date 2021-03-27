@@ -1,9 +1,9 @@
-compiler: lexer.l parser.y ast.c main.c
+compiler:
 	bison -d parser.y
 	flex lexer.l
-	gcc -g -o mzc ast.c parser.tab.c lex.yy.c main.c -lfl
+	gcc -g -o mzc util.c expression.c statement.c function.c parser.tab.c lex.yy.c main.c -lfl
 
-test: prog.c
+test:
 	./mzc prog.c
 	gcc prog.s -o prog
 	./prog

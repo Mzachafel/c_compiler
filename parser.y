@@ -1,16 +1,10 @@
 %{
 
-#include <stdio.h>
-#include <stdlib.h>
 #include "ast.h"
 
 extern int yylex();
 extern int yyerror(char *s);
 extern FILE *outfile;
-union lval {
-	struct expression *expr;
-	int num;
-} val;
 
 %}
 
@@ -21,24 +15,31 @@ union lval {
 	struct expression *expr;
 	char *type;
 	char *identifier;
-	int number;
-	char unop;
+	int constant;
+	int token;
 }
 
 %token <identifier> IDENTIFIER
 %token <type> TYPE
-%token <number> NUMBER 
-%token AND OR SHL SHR E NE L LE G GE
+%token <constant> CONSTANT 
+%token COMMA
+       A ADDA SUBA MULA DIVA MODA SHLA SHRA BORA BXORA BANDA
+       OR AND BOR BXOR BAND
+       E NE L LE G GE
+       SHL SHR ADD SUB MUL DIV MOD
+       NOT LNEG NEG INC DEC PREFINC PREFDEC POSTINC POSTDEC
 %token RETURN ERROR
 
 %type <func> function
 %type <bdy> body
 %type <stmt> statement
-%type <expr> logic_or_expr logic_and_expr
+%type <expr> expressions expression
+	     logic_or_expr logic_and_expr
              bit_or_expr bit_xor_expr bit_and_expr
              equality_expr relational_expr shift_expr
-             additive_expr factor term
-%type <unop> unary_op
+             additive_expr multiplicative_expr
+	     pref_expr post_expr
+%type <token> compound_asgn
 
 %%
 
@@ -52,13 +53,14 @@ program: /* nothing */
 
 function:
 	TYPE IDENTIFIER '(' ')' '{' body '}' {
-	    $$ = creatfunc($1, $2, $6); 
+	    $$ = creatfunc($2, $6); 
         }
 ;
 
 body: 
     statement {
-        $$ = creatbdy($1);
+        struct body *bdy = creatbdy();
+	$$ = addstmt(bdy, $1);
     }
     | body statement {
         $$ = addstmt($1, $2);
@@ -66,142 +68,182 @@ body:
 ;
 
 statement:
-	 RETURN logic_or_expr ';' { 
-	     $$ = creatstmt($2, 0);
+	 /* any expression */
+	 expressions ';' {
+	     $$ = creatstmt(NULL, $1, EXPR);
+	 }
+	 /* declaration */
+	 | TYPE IDENTIFIER ';' {
+	     $$ = creatstmt($2, NULL, DECL);
+	 }
+	 /* declaration and initialization */
+	 | TYPE IDENTIFIER A expressions ';' {
+	     $$ = creatstmt($2, $4, ASGN);
+	 }
+	 /* return statement */
+	 | RETURN expressions ';' { 
+	     $$ = creatstmt(NULL, $2, RET);
          }
+	 /* empty expression */
+	 | ';' {
+	     /* nothing */
+	 }
+;
+
+expressions:
+	   expression
+	   | expressions COMMA expression {
+	       $$ = creatbinexpr($1, COMMA, $3);
+	   }
+;
+
+expression:
+	  logic_or_expr {
+	      $$ = $1;
+	  }
+	  | IDENTIFIER compound_asgn expression {
+	      $$ = creatvarexpr($1, $2, $3);
+	  }
+;
+
+compound_asgn:
+	     A { $$ = A; }
+	     | ADDA { $$ = ADDA; }
+	     | SUBA { $$ = SUBA; }
+	     | MULA { $$ = MULA; }
+	     | DIVA { $$ = DIVA; }
+	     | MODA { $$ = MODA; }
+	     | SHLA { $$ = SHLA; }
+	     | SHRA { $$ = SHRA; }
+	     | BORA { $$ = BORA; }
+	     | BXORA { $$ = BXORA; }
+	     | BANDA { $$ = BANDA; }
 ;
 
 logic_or_expr:
 	     logic_and_expr
 	     | logic_or_expr OR logic_and_expr {
-		 val.expr = $1;
-	         $$ = createxpr(val, OR, $3);
+	         $$ = creatbinexpr($1, OR, $3);
 	     }
 ;
 
 logic_and_expr:
 	      bit_or_expr
 	      | logic_and_expr AND bit_or_expr {
-		  val.expr = $1;
-	          $$ = createxpr(val, AND, $3);
+	          $$ = creatbinexpr($1, AND, $3);
 	      }
 ;
 
 bit_or_expr:
 	   bit_xor_expr
-	   | bit_or_expr '|' bit_xor_expr {
-	       val.expr = $1;
-	       $$ = createxpr(val, '|', $3);
+	   | bit_or_expr BOR bit_xor_expr {
+	       $$ = creatbinexpr($1, BOR, $3);
 	   }
 
 bit_xor_expr:
 	   bit_and_expr
-	   | bit_xor_expr '^' bit_and_expr {
-	       val.expr = $1;
-	       $$ = createxpr(val, '^', $3);
+	   | bit_xor_expr BXOR bit_and_expr {
+	       $$ = creatbinexpr($1, BXOR, $3);
 	   }
 
 bit_and_expr:
 	   equality_expr
-	   | bit_and_expr '&' equality_expr {
-	       val.expr = $1;
-	       $$ = createxpr(val, '&', $3);
+	   | bit_and_expr BAND equality_expr {
+	       $$ = creatbinexpr($1, BAND, $3);
 	   }
 
 equality_expr:
 	     relational_expr
 	     | equality_expr E relational_expr {
-		 val.expr = $1;
-	         $$ = createxpr(val, E, $3);
+	         $$ = creatbinexpr($1, E, $3);
 	     }
 	     | equality_expr NE relational_expr {
-		 val.expr = $1;
-	         $$ = createxpr(val, NE, $3);
+	         $$ = creatbinexpr($1, NE, $3);
 	     }
 ;
 
 relational_expr:
 	       shift_expr
 	       | relational_expr L shift_expr {
-		   val.expr = $1;
-	           $$ = createxpr(val, L, $3);
+	           $$ = creatbinexpr($1, L, $3);
 	       }
 	       | relational_expr LE shift_expr {
-		   val.expr = $1;
-	           $$ = createxpr(val, LE, $3);
+	           $$ = creatbinexpr($1, LE, $3);
 	       }
 	       | relational_expr G shift_expr {
-		   val.expr = $1;
-	           $$ = createxpr(val, G, $3);
+	           $$ = creatbinexpr($1, G, $3);
 	       }
 	       | relational_expr GE shift_expr {
-		   val.expr = $1;
-	           $$ = createxpr(val, GE, $3);
+	           $$ = creatbinexpr($1, GE, $3);
 	       }
 ;
 
 shift_expr:
 	  additive_expr
 	  | shift_expr SHL additive_expr {
-	      val.expr = $1;
-	      $$ = createxpr(val, SHL, $3);
+	      $$ = creatbinexpr($1, SHL, $3);
 	  }
 	  | shift_expr SHR additive_expr {
-	      val.expr = $1;
-	      $$ = createxpr(val, SHR, $3);
+	      $$ = creatbinexpr($1, SHR, $3);
 	  }
 
 additive_expr: 
-	     factor
-	     | additive_expr '+' factor {
-		 val.expr = $1;
-	         $$ = createxpr(val, '+', $3);
+	     multiplicative_expr
+	     | additive_expr ADD multiplicative_expr {
+	         $$ = creatbinexpr($1, ADD, $3);
 	     }
-	     | additive_expr '-' factor {
-		 val.expr = $1;
-	         $$ = createxpr(val, '-', $3);
+	     | additive_expr SUB multiplicative_expr {
+	         $$ = creatbinexpr($1, SUB, $3);
 	     }
 ;
 
-factor:
-      term
-      | factor '*' term {
-	  val.expr = $1;
-          $$ = createxpr(val, '*', $3);
+multiplicative_expr:
+      pref_expr
+      | multiplicative_expr MUL pref_expr {
+          $$ = creatbinexpr($1, MUL, $3);
       }
-      | factor '/' term {
-	  val.expr = $1;
-          $$ = createxpr(val, '/', $3);
+      | multiplicative_expr DIV pref_expr {
+          $$ = creatbinexpr($1, DIV, $3);
       }
-      | factor '%' term {
-	  val.expr = $1;
-          $$ = createxpr(val, '%', $3);
+      | multiplicative_expr MOD pref_expr {
+          $$ = creatbinexpr($1, MOD, $3);
       }
 ;
 
-term: 
-    NUMBER {
-	val.num = $1;
-        $$ = createxpr(val, NUMBER, 0);
-    }
-    | unary_op term {
-	val.expr = $2;
-        $$ = createxpr(val, $1, 0);
-    }
-    | '(' logic_or_expr ')' {
-        $$ = $2;
-    }
+pref_expr:
+	 post_expr
+	 | SUB post_expr {
+	     $$ = creatunexpr($2, NEG);
+	 }
+	 | LNEG post_expr {
+	     $$ = creatunexpr($2, LNEG);
+	 }
+	 | NOT post_expr {
+	     $$ = creatunexpr($2, NOT);
+	 }
+	 | INC IDENTIFIER {
+	     $$ = creatvarexpr($2, PREFINC, NULL);
+	 }
+	 | DEC IDENTIFIER {
+	     $$ = creatvarexpr($2, PREFDEC, NULL);
+	 }
 ;
 
-unary_op: 
-    '-' {
-        $$ = '-';
+post_expr:
+    CONSTANT {
+	$$ = creatconstexpr($1, CONSTANT);
     }
-    | '!' {
-	$$ = '!';
+    | IDENTIFIER {
+        $$ = creatvarexpr($1, IDENTIFIER, NULL);
     }
-    | '~' {
-	$$ = '~';
+    | IDENTIFIER INC {
+        $$ = creatvarexpr($1, POSTINC, NULL);
+    }
+    | IDENTIFIER DEC {
+        $$ = creatvarexpr($1, POSTDEC, NULL);
+    }
+    | '(' expression ')' {
+	$$ = $2;
     }
 ;
 

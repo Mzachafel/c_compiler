@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "parser.tab.h"
+#include "util.h"
 
 extern FILE *yyin;
 FILE *outfile;
@@ -21,7 +22,9 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	
+	creatvarmap();
 	yyparse();
+	clearvarmap();
 
 	fclose(outfile);
 	return 0;
