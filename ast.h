@@ -9,6 +9,7 @@
 
 struct expression;
 
+struct expression *creatternexpr(struct expression *, int, struct expression *, struct expression *);
 struct expression *creatbinexpr(struct expression *, int, struct expression *);
 struct expression *creatunexpr(struct expression *, int);
 struct expression *creatvarexpr(char *, int, struct expression *);
@@ -17,12 +18,14 @@ void writeexpr(struct expression *, FILE *);
 void clearexpr(struct expression *);
 
 enum stmttokens {
-	EXPR, DECL, ASGN, RET
+	EXPR, COND, RET, DECL
 };
 
 struct statement;
 
-struct statement *creatstmt(char *, struct expression *, int);
+struct statement *creatdefstmt(int, struct expression *);
+struct statement *creatcondstmt(int, struct expression *, struct statement *, struct statement *);
+struct statement *creatdeclstmt(int, struct expression *, char *);
 void writestmt(struct statement *, FILE *);
 int isreturn(struct statement *);
 void clearstmt(struct statement *);

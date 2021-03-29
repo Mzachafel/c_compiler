@@ -24,16 +24,17 @@ extern FILE *outfile;
 %token <constant> CONSTANT 
 %token COMMA
        A ADDA SUBA MULA DIVA MODA SHLA SHRA BORA BXORA BANDA
-       OR AND BOR BXOR BAND
+       TERN OR AND BOR BXOR BAND
        E NE L LE G GE
        SHL SHR ADD SUB MUL DIV MOD
        NOT LNEG NEG INC DEC PREFINC PREFDEC POSTINC POSTDEC
-%token RETURN ERROR
+%token IF ELSE RETURN ERROR
 
 %type <func> function
 %type <bdy> body
-%type <stmt> statement
+%type <stmt> block_item statement declaration
 %type <expr> expressions expression
+             conditional_expr
 	     logic_or_expr logic_and_expr
              bit_or_expr bit_xor_expr bit_and_expr
              equality_expr relational_expr shift_expr
@@ -58,36 +59,50 @@ function:
 ;
 
 body: 
-    statement {
+    block_item {
         struct body *bdy = creatbdy();
 	$$ = addstmt(bdy, $1);
     }
-    | body statement {
+    | body block_item {
         $$ = addstmt($1, $2);
     }
+;
+
+block_item:
+	  statement { $$ = $1; }
+	  | declaration { $$ = $1; }
 ;
 
 statement:
 	 /* any expression */
 	 expressions ';' {
-	     $$ = creatstmt(NULL, $1, EXPR);
+	     $$ = creatdefstmt(EXPR, $1);
 	 }
-	 /* declaration */
-	 | TYPE IDENTIFIER ';' {
-	     $$ = creatstmt($2, NULL, DECL);
+	 | IF '(' expressions ')' statement {
+	     $$ = creatcondstmt(COND, $3, $5, NULL);
 	 }
-	 /* declaration and initialization */
-	 | TYPE IDENTIFIER A expressions ';' {
-	     $$ = creatstmt($2, $4, ASGN);
+	 | IF '(' expressions ')' statement ELSE statement {
+	     $$ = creatcondstmt(COND, $3, $5, $7);
 	 }
 	 /* return statement */
 	 | RETURN expressions ';' { 
-	     $$ = creatstmt(NULL, $2, RET);
+	     $$ = creatdefstmt(RET, $2);
          }
 	 /* empty expression */
 	 | ';' {
 	     /* nothing */
 	 }
+;
+
+declaration:
+	   /* declaration */
+	   TYPE IDENTIFIER ';' {
+	       $$ = creatdeclstmt(DECL, NULL, $2);
+	   }
+	   /* declaration and initialization */
+	   | TYPE IDENTIFIER A expressions ';' {
+	       $$ = creatdeclstmt(DECL, $4, $2);
+	   }
 ;
 
 expressions:
@@ -98,7 +113,7 @@ expressions:
 ;
 
 expression:
-	  logic_or_expr {
+	  conditional_expr {
 	      $$ = $1;
 	  }
 	  | IDENTIFIER compound_asgn expression {
@@ -118,6 +133,13 @@ compound_asgn:
 	     | BORA { $$ = BORA; }
 	     | BXORA { $$ = BXORA; }
 	     | BANDA { $$ = BANDA; }
+;
+
+conditional_expr:
+		logic_or_expr
+		| logic_or_expr TERN expressions ':' conditional_expr {
+		    $$ = creatternexpr($1, TERN, $3, $5);
+		}
 ;
 
 logic_or_expr:

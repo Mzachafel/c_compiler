@@ -43,7 +43,7 @@ void pushvar(char *name)
 {
 	for (int i = varmap->curvar-1; i >= 0; i--)
 		if (!strcmp(varmap->var_list[i]->name, name)) {
-			printf("Declared variable %s few times\n", name);
+			fprintf(stderr, "Declared variable %s few times\n", name);
 			return;
 		}
 	if (varmap->curvar == varmap->maxvar) {
@@ -65,7 +65,7 @@ int popvar(char *name)
 		if (!strcmp(varmap->var_list[i]->name, name))
 			break;
 	if (i < 0) {
-		printf("Variable %s is not declared\n", name);
+		fprintf(stderr, "Variable %s is not declared\n", name);
 		return 0;
 	} else
 		return varmap->var_list[i]->offset;

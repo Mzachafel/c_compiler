@@ -22,6 +22,8 @@
 "|=" { return BORA; }
 "^=" { return BXORA; }
 "&=" { return BANDA; }
+"?" { return TERN; }
+":" { return ':'; }
 "||" { return OR; }
 "&&" { return AND; }
 "|" { return BOR; }
@@ -45,6 +47,8 @@
 "++" { return INC; }
 "--" { return DEC; }
 "int" { yylval.type = strdup(yytext); return TYPE; }
+"if" { return IF; }
+"else" { return ELSE; }
 "return" { return RETURN; }
 [a-zA-Z][a-zA-Z0-9-]* { yylval.identifier = strdup(yytext); return IDENTIFIER; }
 [0-9]+ { yylval.constant = atoi(yytext); return CONSTANT; }
