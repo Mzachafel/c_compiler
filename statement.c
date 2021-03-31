@@ -6,6 +6,7 @@ struct statement {
 	union additionalvalue{
 		char *name;
 		struct statement **stmts;
+		struct body *bdy;
 	} addtval;
 };
 
@@ -14,6 +15,16 @@ struct statement *creatdefstmt(int act, struct expression *expr)
 	struct statement *stmt = (struct statement *) malloc(sizeof(struct statement));
 	stmt->act = act;
 	stmt->expr = expr;
+
+	return stmt;
+}
+
+struct statement *creatscopestmt(int act, struct body *bdy)
+{
+	struct statement *stmt = (struct statement *) malloc(sizeof(struct statement));
+	stmt->act = act;
+	stmt->expr = NULL;
+	stmt->addtval.bdy = bdy;
 
 	return stmt;
 }
@@ -46,6 +57,11 @@ void writestmt(struct statement *stmt, FILE *outfile)
 	switch (stmt->act) {
 	case EXPR:
 		writeexpr(stmt->expr, outfile);
+		break;
+	case SCOPE:
+		enterscope();
+		writebdy(stmt->addtval.bdy, outfile);
+		exitscope(outfile);
 		break;
 	case COND:
 		writeexpr(stmt->expr, outfile);
@@ -83,25 +99,19 @@ void writestmt(struct statement *stmt, FILE *outfile)
 	}
 }
 
-int isreturn(struct statement *stmt)
-{
-	if (stmt->act == RET)
-		return 1;
-	return 0;
-}
-
 void clearstmt(struct statement *stmt)
 {
 	if (stmt->expr)
 		clearexpr(stmt->expr);
-	if (stmt->act == DECL)
-		free(stmt->addtval.name);
+	if (stmt->act == SCOPE)
+		clearbdy(stmt->addtval.bdy);
 	else if (stmt->act == COND) {
 		clearstmt(stmt->addtval.stmts[0]);
 		if (stmt->addtval.stmts[1])
 			clearstmt(stmt->addtval.stmts[1]);
 		free(stmt->addtval.stmts);
-	}
+	} else if (stmt->act == DECL)
+		free(stmt->addtval.name);
 	free(stmt);
 }
 

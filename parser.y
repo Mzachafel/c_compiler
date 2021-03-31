@@ -78,6 +78,9 @@ statement:
 	 expressions ';' {
 	     $$ = creatdefstmt(EXPR, $1);
 	 }
+	 | '{' body '}' {
+	     $$ = creatscopestmt(SCOPE, $2);
+	 }
 	 | IF '(' expressions ')' statement {
 	     $$ = creatcondstmt(COND, $3, $5, NULL);
 	 }
@@ -89,9 +92,10 @@ statement:
 	     $$ = creatdefstmt(RET, $2);
          }
 	 /* empty expression */
-	 | ';' {
-	     /* nothing */
-	 }
+	 | ';' { $$ = NULL; }
+	 /* empty scope */
+	 | '{' '}' { $$ = NULL; }
+	     
 ;
 
 declaration:

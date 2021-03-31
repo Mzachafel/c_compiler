@@ -18,12 +18,13 @@ void writeexpr(struct expression *, FILE *);
 void clearexpr(struct expression *);
 
 enum stmttokens {
-	EXPR, COND, RET, DECL
+	EXPR, SCOPE, COND, RET, DECL
 };
 
 struct statement;
 
 struct statement *creatdefstmt(int, struct expression *);
+struct statement *creatscopestmt(int, struct body *);
 struct statement *creatcondstmt(int, struct expression *, struct statement *, struct statement *);
 struct statement *creatdeclstmt(int, struct expression *, char *);
 void writestmt(struct statement *, FILE *);

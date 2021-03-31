@@ -50,6 +50,8 @@ struct body *creatbdy(void)
 
 struct body *addstmt(struct body *bdy, struct statement *stmt)
 {
+	if (stmt == NULL)
+		return bdy;
 	if (bdy->curstmt == bdy->maxstmt) {
 		bdy->maxstmt *= 2;
 		bdy->stmts = realloc(bdy->stmts, bdy->maxstmt * sizeof(struct statement *));
@@ -63,12 +65,10 @@ void writebdy(struct body *bdy, FILE *outfile)
 {
 	for (int i=0; i<bdy->curstmt; i++)
 		writestmt(bdy->stmts[i], outfile);
-	if (!isreturn(bdy->stmts[bdy->curstmt-1])) {
-		fprintf(outfile, "\tmov     $0,%%rax\n");
-		fprintf(outfile, "\tmov     %%rbp,%%rsp\n");
-		fprintf(outfile, "\tpop     %%rbp\n");
-		fprintf(outfile, "\tret\n");
-	}
+	/* fprintf(outfile, "\tmov     $0,%%rax\n");
+	fprintf(outfile, "\tmov     %%rbp,%%rsp\n");
+	fprintf(outfile, "\tpop     %%rbp\n");
+	fprintf(outfile, "\tret\n"); */
 }
 
 void clearbdy(struct body *bdy)
