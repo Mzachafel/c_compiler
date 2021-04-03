@@ -26,7 +26,12 @@ struct statement;
 struct statement *creatdefstmt(int, struct expression *);
 struct statement *creatscopestmt(int, struct body *);
 struct statement *creatcondstmt(int, struct expression *, struct statement *, struct statement *);
-struct statement *creatdeclstmt(int, struct expression *, char *);
+struct statement *creatforexprstmt(int, int, struct expression *, struct expression *,
+		                             struct expression *, struct statement *);
+struct statement *creatfordeclstmt(int, int, struct statement *, struct expression *,
+		                             struct expression *, struct statement *);
+struct statement *creatwhilestmt(int, struct expression *, struct statement *);
+struct statement *creatdeclstmt(int, char *, struct expression *);
 void writestmt(struct statement *, FILE *);
 int isreturn(struct statement *);
 void clearstmt(struct statement *);

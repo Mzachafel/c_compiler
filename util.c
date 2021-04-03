@@ -23,13 +23,22 @@ struct variable {
 	int scope;
 };
 
+struct label {
+	char *brk;
+	char *cont;
+};
+
 #define DEFMAXVAR 8
+#define DEFMAXLBL 8
 struct variable_mapping {
 	int maxvar;
 	struct variable **var_list;
 	int curvar;
 	int stack_index;
 	int curscope;
+	int maxlbl;
+	struct label **lbl_list;
+	int curlbl;
 } *varmap;
 
 void creatvarmap(void)
@@ -40,6 +49,9 @@ void creatvarmap(void)
 	varmap->curvar = 0;
 	varmap->stack_index = -8;
 	varmap->curscope = 0;
+	varmap->maxlbl = DEFMAXLBL;
+	varmap->lbl_list = (struct label **) calloc(varmap->maxlbl, sizeof(struct label *));
+	varmap->curlbl = 0;
 }
 
 void pushvar(char *name)
@@ -47,7 +59,7 @@ void pushvar(char *name)
 	for (int i = varmap->curvar-1; i >= 0; i--)
 		if (!strcmp(varmap->var_list[i]->name, name) && varmap->var_list[i]->scope == varmap->curscope) {
 			fprintf(stderr, "Declared variable %s few times\n", name);
-			return;
+			exit(1);
 		}
 	if (varmap->curvar == varmap->maxvar) {
 		varmap->maxvar *= 2;
@@ -70,7 +82,7 @@ int popvar(char *name)
 			break;
 	if (i < 0) {
 		fprintf(stderr, "Variable %s is not declared\n", name);
-		return 0;
+		exit(1);
 	} else
 		return varmap->var_list[i]->offset;
 }
@@ -100,6 +112,38 @@ void exitscope(FILE *outfile)
 	}
 }
 
+void pushlbl(char *brk, char *cont)
+{
+	if (varmap->curlbl == varmap->maxlbl) {
+		varmap->maxlbl *= 2;
+		varmap->lbl_list = (struct label **) 
+			            realloc(varmap->lbl_list, varmap->maxlbl * sizeof(struct label *));
+	}
+	varmap->lbl_list[varmap->curlbl] = (struct label *) malloc(sizeof(struct label));
+	varmap->lbl_list[varmap->curlbl]->brk = strdup(brk);
+	varmap->lbl_list[varmap->curlbl]->cont = strdup(cont);
+	varmap->curlbl++;
+}
+
+char *poplbl(int act)
+{
+	if (varmap->curlbl == 0) {
+		fprintf(stderr, "Break statement not within loop\n");
+		exit(1);
+	}
+	if (act)
+		return varmap->lbl_list[varmap->curlbl-1]->brk;
+	else
+		return varmap->lbl_list[varmap->curlbl-1]->cont;
+}
+
+void exitloop(void) {
+	varmap->curlbl--;
+	free(varmap->lbl_list[varmap->curlbl]->brk);
+	free(varmap->lbl_list[varmap->curlbl]->cont);
+	free(varmap->lbl_list[varmap->curlbl]);
+}
+
 void clearvarmap(void)
 {
 	for (int i=0; i<varmap->curvar; i++) {
@@ -107,6 +151,7 @@ void clearvarmap(void)
 		free(varmap->var_list[i]);
 	}
 	free(varmap->var_list);
+	free(varmap->lbl_list);
 	free(varmap);
 }
 

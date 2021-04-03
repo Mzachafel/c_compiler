@@ -28,12 +28,13 @@ extern FILE *outfile;
        E NE L LE G GE
        SHL SHR ADD SUB MUL DIV MOD
        NOT LNEG NEG INC DEC PREFINC PREFDEC POSTINC POSTDEC
-%token IF ELSE RETURN ERROR
+%token IF ELSE FOR WHILE DO BREAK CONTINUE RETURN ERROR
 
 %type <func> function
 %type <bdy> body
 %type <stmt> block_item statement declaration
-%type <expr> expressions expression
+%type <expr> exp_opt_semicol exp_opt_paren
+             expressions expression
              conditional_expr
 	     logic_or_expr logic_and_expr
              bit_or_expr bit_xor_expr bit_and_expr
@@ -78,6 +79,7 @@ statement:
 	 expressions ';' {
 	     $$ = creatdefstmt(EXPR, $1);
 	 }
+	 /* new scope */
 	 | '{' body '}' {
 	     $$ = creatscopestmt(SCOPE, $2);
 	 }
@@ -87,25 +89,60 @@ statement:
 	 | IF '(' expressions ')' statement ELSE statement {
 	     $$ = creatcondstmt(COND, $3, $5, $7);
 	 }
+	 | FOR '(' exp_opt_semicol exp_opt_semicol exp_opt_paren statement {
+	     $$ = creatforexprstmt(FOR, EXPR, $3, $4, $5, $6);
+	 }
+	 | FOR '(' declaration exp_opt_semicol exp_opt_paren statement {
+	     $$ = creatfordeclstmt(FOR, DECL, $3, $4, $5, $6);
+	 }
+	 | WHILE '(' expressions ')' statement {
+	     $$ = creatwhilestmt(WHILE, $3, $5);
+	 }
+	 | DO statement WHILE '(' expressions ')' ';' {
+	     $$ = creatwhilestmt(DO, $5, $2);
+	 }
+	 | BREAK ';' {
+	     $$ = creatdefstmt(BREAK, NULL);
+	 }
+	 | CONTINUE ';' {
+	     $$ = creatdefstmt(CONTINUE, NULL);
+	 }
 	 /* return statement */
 	 | RETURN expressions ';' { 
 	     $$ = creatdefstmt(RET, $2);
          }
-	 /* empty expression */
+	 /* empty statement */
 	 | ';' { $$ = NULL; }
 	 /* empty scope */
-	 | '{' '}' { $$ = NULL; }
-	     
+	 | '{' '}' { $$ = NULL; }	     
+;
+
+exp_opt_semicol:
+	       expressions ';' {
+	           $$ = $1;
+	       }
+	       | ';' {
+	           $$ = NULL;
+	       }
+;
+
+exp_opt_paren:
+	     expressions ')' {
+	         $$ = $1;
+	     }
+	     | ')' {
+	         $$ = NULL;
+	     }
 ;
 
 declaration:
 	   /* declaration */
 	   TYPE IDENTIFIER ';' {
-	       $$ = creatdeclstmt(DECL, NULL, $2);
+	       $$ = creatdeclstmt(DECL, $2, NULL);
 	   }
 	   /* declaration and initialization */
 	   | TYPE IDENTIFIER A expressions ';' {
-	       $$ = creatdeclstmt(DECL, $4, $2);
+	       $$ = creatdeclstmt(DECL, $2, $4);
 	   }
 ;
 

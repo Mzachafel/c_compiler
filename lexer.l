@@ -49,8 +49,13 @@
 "int" { yylval.type = strdup(yytext); return TYPE; }
 "if" { return IF; }
 "else" { return ELSE; }
+"for" { return FOR; }
+"while" { return WHILE; }
+"do" { return DO; }
+"break" { return BREAK; }
+"continue" { return CONTINUE; }
 "return" { return RETURN; }
-[a-zA-Z][a-zA-Z0-9-]* { yylval.identifier = strdup(yytext); return IDENTIFIER; }
+[a-zA-Z_][a-zA-Z0-9_]* { yylval.identifier = strdup(yytext); return IDENTIFIER; }
 [0-9]+ { yylval.constant = atoi(yytext); return CONSTANT; }
 [ \t\n] { /* skip whitespaces */ }
 . { return ERROR; }
