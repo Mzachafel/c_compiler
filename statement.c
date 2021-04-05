@@ -215,7 +215,8 @@ void writestmt(struct statement *stmt, FILE *outfile)
 		fprintf(outfile, "\tjmp     %s\n", poplbl(0));
 		break;
 	case RET:
-		writeexpr(stmt->val.expr, outfile);	
+		if (stmt->val.expr)
+			writeexpr(stmt->val.expr, outfile);	
 		fprintf(outfile, "\tmov     %%rbp,%%rsp\n");
 		fprintf(outfile, "\tpop     %%rbp\n");
 		fprintf(outfile, "\tret\n");
@@ -226,9 +227,14 @@ void writestmt(struct statement *stmt, FILE *outfile)
 		else
 			writeexpr(stmt->val.varstmt->init, outfile);
 		fprintf(outfile, "\tpush    %%rax\n");
-		pushvar(stmt->val.varstmt->name);
+		pushvar(stmt->val.varstmt->name, 0);
 		break;
 	}
+}
+
+void pushparam(struct statement *stmt, int index)
+{
+	pushvar(stmt->val.varstmt->name, (index+2)*8);
 }
 
 void clearstmt(struct statement *stmt)
@@ -273,6 +279,7 @@ void clearstmt(struct statement *stmt)
 		free(stmt->val.whilestmt);
 		break;
 	case DECL:
+	case PARAM:
 		free(stmt->val.varstmt->name);
 		if (stmt->val.varstmt->init)
 			clearexpr(stmt->val.varstmt->init);

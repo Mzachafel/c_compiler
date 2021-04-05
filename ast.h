@@ -15,10 +15,12 @@ struct expression *creatunexpr(struct expression *, int);
 struct expression *creatvarexpr(char *, int, struct expression *);
 struct expression *creatconstexpr(int, int);
 void writeexpr(struct expression *, FILE *);
+int countparams(struct expression *);
+void writeparams(struct expression *, FILE *);
 void clearexpr(struct expression *);
 
 enum stmttokens {
-	EXPR, SCOPE, COND, RET, DECL
+	EXPR, SCOPE, COND, RET, DECL, PARAM
 };
 
 struct statement;
@@ -33,7 +35,7 @@ struct statement *creatfordeclstmt(int, int, struct statement *, struct expressi
 struct statement *creatwhilestmt(int, struct expression *, struct statement *);
 struct statement *creatdeclstmt(int, char *, struct expression *);
 void writestmt(struct statement *, FILE *);
-int isreturn(struct statement *);
+void pushparam(struct statement *, int);
 void clearstmt(struct statement *);
 
 struct body;
@@ -41,11 +43,13 @@ struct body;
 struct body *creatbdy(void);
 struct body *addstmt(struct body *, struct statement *);
 void writebdy(struct body *, FILE *);
+int getparams(struct body *);
+void pushparams(struct body *);
 void clearbdy(struct body *);
 
 struct function;
 
-struct function *creatfunc(char *, struct body *);
+struct function *creatfunc(char *, struct body *, struct body *);
 void writefunc(struct function *, FILE *);
 void clearfunc(struct function *);
 

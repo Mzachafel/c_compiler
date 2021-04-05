@@ -17,9 +17,10 @@ char *newlabel(void)
 	return label;
 }
 
-struct variable {
+struct declaration {
 	char *name;
-	int offset;
+	int type;
+	int value;
 	int scope;
 };
 
@@ -28,63 +29,121 @@ struct label {
 	char *cont;
 };
 
-#define DEFMAXVAR 8
+#define DEFMAXDECL 8
 #define DEFMAXLBL 8
+#define DEFMAXFUNC 8
 struct variable_mapping {
-	int maxvar;
-	struct variable **var_list;
-	int curvar;
+	/* known variables and function names */
+	int maxdecl;
+	struct declaration **decl_list;
+	int curdecl;
 	int stack_index;
+	/* scope support for braces and loops */
 	int curscope;
+	/* iteration labels for break and continue statements */
 	int maxlbl;
 	struct label **lbl_list;
 	int curlbl;
+	/* defined functions' names */
+	int maxfunc;
+	char **func_list;
+	int curfunc;
 } *varmap;
 
 void creatvarmap(void)
 {
 	varmap = (struct variable_mapping *) malloc(sizeof(struct variable_mapping));
-	varmap->maxvar = DEFMAXVAR;
-	varmap->var_list = (struct variable **) calloc(varmap->maxvar, sizeof(struct variable *));
-	varmap->curvar = 0;
+	varmap->maxdecl = DEFMAXDECL;
+	varmap->decl_list = (struct declaration **) calloc(varmap->maxdecl, sizeof(struct declaration *));
+	varmap->curdecl = 0;
 	varmap->stack_index = -8;
 	varmap->curscope = 0;
 	varmap->maxlbl = DEFMAXLBL;
 	varmap->lbl_list = (struct label **) calloc(varmap->maxlbl, sizeof(struct label *));
 	varmap->curlbl = 0;
+	varmap->maxfunc = DEFMAXFUNC;
+	varmap->func_list = (char **) calloc(varmap->maxfunc, sizeof(char *));
+	varmap->curfunc = 0;
 }
 
-void pushvar(char *name)
+void pushvar(char *name, int value)
 {
-	for (int i = varmap->curvar-1; i >= 0; i--)
-		if (!strcmp(varmap->var_list[i]->name, name) && varmap->var_list[i]->scope == varmap->curscope) {
+	for (int i = varmap->curdecl-1; i >= 0; i--)
+		if (!strcmp(varmap->decl_list[i]->name, name) && 
+		    varmap->decl_list[i]->type == 0 /* var */ &&
+		    varmap->decl_list[i]->scope == varmap->curscope) {
 			fprintf(stderr, "Declared variable %s few times\n", name);
 			exit(1);
 		}
-	if (varmap->curvar == varmap->maxvar) {
-		varmap->maxvar *= 2;
-		varmap->var_list = (struct variable **) 
-			            realloc(varmap->var_list, varmap->maxvar * sizeof(struct variable *));
+	if (varmap->curdecl == varmap->maxdecl) {
+		varmap->maxdecl *= 2;
+		varmap->decl_list = (struct declaration **) 
+			            realloc(varmap->decl_list, varmap->maxdecl * sizeof(struct declaration *));
 	}
-	varmap->var_list[varmap->curvar] = (struct variable *) malloc(sizeof(struct variable));
-	varmap->var_list[varmap->curvar]->name = strdup(name);
-	varmap->var_list[varmap->curvar]->offset = varmap->stack_index;
-	varmap->var_list[varmap->curvar]->scope = varmap->curscope;
-	varmap->curvar++;
+	varmap->decl_list[varmap->curdecl] = (struct declaration *) malloc(sizeof(struct declaration));
+	varmap->decl_list[varmap->curdecl]->name = strdup(name);
+	varmap->decl_list[varmap->curdecl]->type = 0 /* var */;
+	varmap->decl_list[varmap->curdecl]->value = value ? value : varmap->stack_index;
+	varmap->decl_list[varmap->curdecl]->scope = varmap->curscope;
+	varmap->curdecl++;
 	varmap->stack_index -= 8;
 }
 
 int popvar(char *name)
 {
 	int i;
-	for (i = varmap->curvar-1; i >= 0; i--)
-		if (!strcmp(varmap->var_list[i]->name, name))
+	for (i = varmap->curdecl-1; i >= 0; i--)
+		if (!strcmp(varmap->decl_list[i]->name, name) && varmap->decl_list[i]->type == 0 /* var */)
 			break;
 	if (i < 0) {
 		fprintf(stderr, "Variable %s is not declared\n", name);
 		exit(1);
 	} else
-		return varmap->var_list[i]->offset;
+		return varmap->decl_list[i]->value;
+}
+
+void pushfunc(char *name, int value)
+{
+	for (int i = varmap->curdecl-1; i >= 0; i--) {
+		if (!strcmp(varmap->decl_list[i]->name, name) && 
+		    varmap->decl_list[i]->type == 1 /* func */ &&
+		    varmap->decl_list[i]->scope == varmap->curscope)
+			return;
+		if (varmap->decl_list[i]->scope != varmap->curscope)
+			break;
+	}
+	if (varmap->curdecl == varmap->maxdecl) {
+		varmap->maxdecl *= 2;
+		varmap->decl_list = (struct declaration **) 
+			            realloc(varmap->decl_list, varmap->maxdecl * sizeof(struct declaration *));
+	}
+	varmap->decl_list[varmap->curdecl] = (struct declaration *) malloc(sizeof(struct declaration));
+	varmap->decl_list[varmap->curdecl]->name = strdup(name);
+	varmap->decl_list[varmap->curdecl]->type = 1 /* func */;
+	varmap->decl_list[varmap->curdecl]->value = value;
+	varmap->decl_list[varmap->curdecl]->scope = varmap->curscope;
+	varmap->curdecl++;
+}
+
+void popfunc(char *name, int value)
+{
+	int i;
+	for (i = varmap->curdecl-1; i >= 0; i--)
+		if (!strcmp(varmap->decl_list[i]->name, name))
+			if (varmap->decl_list[i]->type == 1 /* func */)
+				break;
+			else {
+				fprintf(stderr, "Called object %s is not a function\n", name);
+				exit(1);
+			}
+	if (i < 0) {
+		fprintf(stderr, "Function %s is not declared\n", name);
+		exit(1);
+	}
+	if (varmap->decl_list[i]->value != value) {
+		fprintf(stderr, "Function %s has different amount of arguments\n", name);
+		exit(1);
+	}
 }
 
 void enterscope(void)
@@ -95,13 +154,13 @@ void enterscope(void)
 void exitscope(FILE *outfile)
 {
 	int stack_ret = 0;
-	for (int i = varmap->curvar - 1; i >= 0; i--) {
-		if (varmap->var_list[i]->scope != varmap->curscope)
+	for (int i = varmap->curdecl - 1; i >= 0; i--) {
+		if (varmap->decl_list[i]->scope != varmap->curscope)
 			break;
 		else {
-			free(varmap->var_list[i]->name);
-			free(varmap->var_list[i]);
-			varmap->curvar--;
+			free(varmap->decl_list[i]->name);
+			free(varmap->decl_list[i]);
+			varmap->curdecl--;
 			stack_ret += 8;
 		}
 	}
@@ -137,6 +196,19 @@ char *poplbl(int act)
 		return varmap->lbl_list[varmap->curlbl-1]->cont;
 }
 
+int checkfuncname(char *name)
+{
+	for (int i = 0; i<varmap->curfunc; i++)
+		if (!strcmp(varmap->func_list[i], name))
+			return 0;
+	if (varmap->curfunc == varmap->maxfunc) {
+		varmap->maxfunc *= 2;
+		varmap->func_list = (char **) realloc(varmap->func_list, varmap->maxfunc * sizeof(char *));
+	}
+	varmap->func_list[varmap->curfunc++] = strdup(name);
+	return 1;
+}
+
 void exitloop(void) {
 	varmap->curlbl--;
 	free(varmap->lbl_list[varmap->curlbl]->brk);
@@ -146,11 +218,11 @@ void exitloop(void) {
 
 void clearvarmap(void)
 {
-	for (int i=0; i<varmap->curvar; i++) {
-		free(varmap->var_list[i]->name);
-		free(varmap->var_list[i]);
+	for (int i=0; i<varmap->curdecl; i++) {
+		free(varmap->decl_list[i]->name);
+		free(varmap->decl_list[i]);
 	}
-	free(varmap->var_list);
+	free(varmap->decl_list);
 	free(varmap->lbl_list);
 	free(varmap);
 }

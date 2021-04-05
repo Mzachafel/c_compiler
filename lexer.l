@@ -55,6 +55,7 @@
 "break" { return BREAK; }
 "continue" { return CONTINUE; }
 "return" { return RETURN; }
+"void" { return VOID; }
 [a-zA-Z_][a-zA-Z0-9_]* { yylval.identifier = strdup(yytext); return IDENTIFIER; }
 [0-9]+ { yylval.constant = atoi(yytext); return CONSTANT; }
 [ \t\n] { /* skip whitespaces */ }

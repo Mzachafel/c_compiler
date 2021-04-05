@@ -27,12 +27,12 @@ extern FILE *outfile;
        TERN OR AND BOR BXOR BAND
        E NE L LE G GE
        SHL SHR ADD SUB MUL DIV MOD
-       NOT LNEG NEG INC DEC PREFINC PREFDEC POSTINC POSTDEC
-%token IF ELSE FOR WHILE DO BREAK CONTINUE RETURN ERROR
+       NOT LNEG NEG INC DEC PREFINC PREFDEC POSTINC POSTDEC FUNC
+%token IF ELSE FOR WHILE DO BREAK CONTINUE RETURN VOID ERROR
 
 %type <func> function
-%type <bdy> body
-%type <stmt> block_item statement declaration
+%type <bdy> param_opt parameters body_opt body
+%type <stmt> parameter block_item statement declaration
 %type <expr> exp_opt_semicol exp_opt_paren
              expressions expression
              conditional_expr
@@ -54,12 +54,49 @@ program: /* nothing */
 ;
 
 function:
-	TYPE IDENTIFIER '(' ')' '{' body '}' {
-	    $$ = creatfunc($2, $6); 
+	TYPE IDENTIFIER '(' param_opt '{' body_opt {
+	    $$ = creatfunc($2, $4, $6); 
+        }
+	| TYPE IDENTIFIER '(' param_opt ';' {
+	    $$ = creatfunc($2, $4, NULL); 
         }
 ;
 
-body: 
+param_opt:
+	 parameters ')' {
+	     $$ = $1;
+	 }
+	 | VOID ')' {
+	     $$ = NULL;
+	 }
+;
+
+parameters:
+	  parameter {
+	      struct body *bdy = creatbdy();
+	      $$ = addstmt(bdy, $1);
+	  }   
+	  | parameters COMMA parameter {
+	      $$ = addstmt($1, $3);
+	  }
+;
+
+parameter:
+	 TYPE IDENTIFIER { 
+	     $$ = creatdeclstmt(PARAM, $2, NULL);
+	 }
+;	     
+
+body_opt:
+	body '}' {
+	    $$ = $1;
+	}
+	| '}' {
+	    $$ = NULL;
+	}
+;
+
+body:
     block_item {
         struct body *bdy = creatbdy();
 	$$ = addstmt(bdy, $1);
@@ -75,12 +112,10 @@ block_item:
 ;
 
 statement:
-	 /* any expression */
-	 expressions ';' {
+	 exp_opt_semicol {
 	     $$ = creatdefstmt(EXPR, $1);
 	 }
-	 /* new scope */
-	 | '{' body '}' {
+	 | '{' body_opt {
 	     $$ = creatscopestmt(SCOPE, $2);
 	 }
 	 | IF '(' expressions ')' statement {
@@ -107,14 +142,9 @@ statement:
 	 | CONTINUE ';' {
 	     $$ = creatdefstmt(CONTINUE, NULL);
 	 }
-	 /* return statement */
-	 | RETURN expressions ';' { 
+	 | RETURN exp_opt_semicol { 
 	     $$ = creatdefstmt(RET, $2);
          }
-	 /* empty statement */
-	 | ';' { $$ = NULL; }
-	 /* empty scope */
-	 | '{' '}' { $$ = NULL; }	     
 ;
 
 exp_opt_semicol:
@@ -136,11 +166,9 @@ exp_opt_paren:
 ;
 
 declaration:
-	   /* declaration */
 	   TYPE IDENTIFIER ';' {
 	       $$ = creatdeclstmt(DECL, $2, NULL);
 	   }
-	   /* declaration and initialization */
 	   | TYPE IDENTIFIER A expressions ';' {
 	       $$ = creatdeclstmt(DECL, $2, $4);
 	   }
@@ -304,6 +332,9 @@ post_expr:
     }
     | IDENTIFIER DEC {
         $$ = creatvarexpr($1, POSTDEC, NULL);
+    }
+    | IDENTIFIER '(' exp_opt_paren {
+        $$ = creatvarexpr($1, FUNC, $3);
     }
     | '(' expression ')' {
 	$$ = $2;

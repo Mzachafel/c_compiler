@@ -68,10 +68,20 @@ struct expression *creatconstexpr(int lval, int act)
 void writeexpr(struct expression *expr, FILE *outfile)
 {
 	char *label1, *label2;
-	int offset;
+	int value;
 	if (expr->act == CONSTANT)
 		fprintf(outfile, "\tmov     $%d,%%rax\n", expr->lval.num);
-	else if (expr->act == TERN) {
+	else if (expr->act == FUNC) {
+		if (expr->rval.expr != NULL)
+			value = countparams(expr->rval.expr);
+		else
+			value = 0;
+		popfunc(expr->lval.name, value);
+		if (expr->rval.expr)
+			writeparams(expr->rval.expr, outfile);
+		fprintf(outfile, "\tcall    %s\n", expr->lval.name);
+		fprintf(outfile, "\tadd     $%d,%%rsp\n", value*8);
+	} else if (expr->act == TERN) {
 		writeexpr(expr->lval.expr, outfile);
 		fprintf(outfile, "\tcmp     $0,%%rax\n");
 		label1 = newlabel();
@@ -103,104 +113,104 @@ void writeexpr(struct expression *expr, FILE *outfile)
 			fprintf(outfile, "\tnot     %%rax\n");
 			break;
 		case PREFINC:
-			offset = popvar(expr->lval.name);
-			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", offset);
+			value = popvar(expr->lval.name);
+			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", value);
 			fprintf(outfile, "\tinc     %%rax\n");
-			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", value);
 			break;
 		case PREFDEC:
-			offset = popvar(expr->lval.name);
-			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", offset);
+			value = popvar(expr->lval.name);
+			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", value);
 			fprintf(outfile, "\tdec     %%rax\n");
-			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", value);
 			break;
 		case IDENTIFIER: /* get value of variable */
-			offset = popvar(expr->lval.name);
-			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", offset);
+			value = popvar(expr->lval.name);
+			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", value);
 			break;
 		case POSTINC:
-			offset = popvar(expr->lval.name);
-			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", offset);
+			value = popvar(expr->lval.name);
+			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", value);
 			fprintf(outfile, "\tmov     %%rax,%%rcx\n");
 			fprintf(outfile, "\tinc     %%rcx\n");
-			fprintf(outfile, "\tmov     %%rcx,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmov     %%rcx,%d(%%rbp)\n", value);
 			break;
 		case POSTDEC:
-			offset = popvar(expr->lval.name);
-			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", offset);
+			value = popvar(expr->lval.name);
+			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", value);
 			fprintf(outfile, "\tmov     %%rax,%%rcx\n");
 			fprintf(outfile, "\tdec     %%rcx\n");
-			fprintf(outfile, "\tmov     %%rcx,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmov     %%rcx,%d(%%rbp)\n", value);
 			break;
 		}
 	else /* binary operator */
 		switch(expr->act) {
 		/* assign value to variable */
 		case A:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
-			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", value);
 			break;
 		case BORA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
-			fprintf(outfile, "\tor      %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tor      %%rax,%d(%%rbp)\n", value);
 			break;
 		case BXORA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
-			fprintf(outfile, "\txor     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\txor     %%rax,%d(%%rbp)\n", value);
 			break;
 		case BANDA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
-			fprintf(outfile, "\tand     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tand     %%rax,%d(%%rbp)\n", value);
 			break;
 		case SHLA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
 			fprintf(outfile, "\tmov     %%al,%%cl\n");
-			fprintf(outfile, "\tshl     %%cl,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tshl     %%cl,%d(%%rbp)\n", value);
 			break;
 		case SHRA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
 			fprintf(outfile, "\tmov     %%al,%%cl\n");
-			fprintf(outfile, "\tshr     %%cl,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tshr     %%cl,%d(%%rbp)\n", value);
 			break;
 		case ADDA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
-			fprintf(outfile, "\tadd     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tadd     %%rax,%d(%%rbp)\n", value);
 			break;
 		case SUBA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
-			fprintf(outfile, "\tsub     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tsub     %%rax,%d(%%rbp)\n", value);
 			break;
 		case MULA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
-			fprintf(outfile, "\tmul     %d(%%rbp)\n", offset);
-			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmul     %d(%%rbp)\n", value);
+			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", value);
 			break;
 		case DIVA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
 			fprintf(outfile, "\tmov     %%rax,%%rcx\n");
-			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", offset);
+			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", value);
 			fprintf(outfile, "\tmov     $0,%%rdx\n");
 			fprintf(outfile, "\tdiv     %%rcx\n");
-			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmov     %%rax,%d(%%rbp)\n", value);
 			break;
 		case MODA:
-			offset = popvar(expr->lval.name);
+			value = popvar(expr->lval.name);
 			writeexpr(expr->rval.expr, outfile);
 			fprintf(outfile, "\tmov     %%rax,%%rcx\n");
-			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", offset);
+			fprintf(outfile, "\tmov     %d(%%rbp),%%rax\n", value);
 			fprintf(outfile, "\tmov     $0,%%rdx\n");
 			fprintf(outfile, "\tdiv     %%rcx\n");
-			fprintf(outfile, "\tmov     %%rdx,%d(%%rbp)\n", offset);
+			fprintf(outfile, "\tmov     %%rdx,%d(%%rbp)\n", value);
 			break;
 		/* logical or arithmetic operations */
 		case COMMA:
@@ -368,9 +378,29 @@ void writeexpr(struct expression *expr, FILE *outfile)
 		}
 }
 
+int countparams(struct expression *expr)
+{
+	if (expr->act == COMMA)
+		return 1 + countparams(expr->lval.expr);
+	else
+		return 1;
+}
+
+void writeparams(struct expression *expr, FILE *outfile)
+{
+	if (expr->act == COMMA) {
+		writeexpr(expr->rval.expr, outfile);
+		fprintf(outfile, "\tpush    %%rax\n");
+		writeparams(expr->lval.expr, outfile);
+	} else {
+		writeexpr(expr, outfile);
+		fprintf(outfile, "\tpush    %%rax\n");
+	}
+}
+
 void clearexpr(struct expression *expr)
 {
-	if (expr->act == IDENTIFIER || expr->act >= PREFINC && expr->act <= POSTDEC || 
+	if (expr->act == IDENTIFIER || expr->act >= PREFINC && expr->act <= FUNC || 
 	    expr->act >= A && expr->act <= BANDA) {
 		free(expr->lval.name);
 		if (expr->rval.expr)
